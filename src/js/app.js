@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+//import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { GUI } from 'dat.gui'
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -10,10 +11,11 @@ let camera, light, controls;
 let dirLight1, dirLight2, ambientLight;
 const gui = new GUI();
 const stats = new Stats();
-const loader = new GLTFLoader().setPath('./assets/');
+const assetLoader = new GLTFLoader().setPath('./assets/');
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2( );
-let INTERSECTED;
+let clickMeshIntersect;
+let intersects;
 let top_down = false;
 const sky = {
         color: '#b2c4d1'
@@ -60,7 +62,7 @@ function init() {
                 camera = new THREE.PerspectiveCamera( 100, window.innerWidth / window.innerHeight, 1, 1000000);
                 camera.position.set(15,20,15);
                 controls = new OrbitControls( camera, renderer.domElement );
-                controls.listenToKeyEvents( window );
+                //controls.listenToKeyEvents( window );
                 controls.enableDamping = true; 
                 controls.screenSpacePanning = false;
                 controls.dampingFactor = 0.05;
@@ -90,7 +92,8 @@ function init() {
 
         //GRID
         const gridHelper = new THREE.GridHelper(100000, 10000, 0xff0000, 0xaaaaaa );
-        gridHelper.position.y = 2;
+        gridHelper.position.y = 1;
+        gridHelper.name = 'grid';
         scene.add( gridHelper );
    
         //TREES AND STUFF
@@ -107,10 +110,20 @@ function init() {
         const geometry = new THREE.PlaneGeometry(100000, 100000);
         const material = new THREE.MeshBasicMaterial( {color: '#dbc391', side: THREE.BackSide} );
         const plane = new THREE.Mesh( geometry, material );
+        plane.name = 'plane'
         plane.position.y=0;
         plane.rotateX(Math.PI/2);
         scene.add( plane );
-           /*     
+
+        const clickMesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(100000, 100000),
+                new THREE.MeshBasicMaterial({visible: false, side: THREE.DoubleSide}))
+        clickMesh.position.y=gridHelper.position.y;
+        clickMesh.rotateX(Math.PI/2);
+        clickMesh.name = 'clickMesh';
+        scene.add(clickMesh);
+
+        /*     
         for ( let i = 0; i < 1000; i ++ ) {
 
                 const mesh = new THREE.Mesh(treeGeometry,treeMaterial);
@@ -121,19 +134,86 @@ function init() {
                 mesh.matrixAutoUpdate = false;
                 scene.add( mesh );
 
-        }*/
-        loader.load( '/Drone.glb', function ( gltf ){
+        }
+        */
+
+        
+        assetLoader.load('/Drone.glb', function ( gltf ){
                 const drone = gltf.scene;  
                 drone.scale.set(10, 10, 10);
                 drone.position.set(0,5,0);
+                drone.userData.name = "mydrone";
+                
                 scene.add(drone);
-        } );
-       
+        },
+        undefined,
+        function ( error ) {
+		console.log( 'An error happened:', error);
 
-        document.addEventListener( 'pointermove', onPointerMove );
+	});
+
+        /*
+        var dummy = new THREE.Object3D();
+        assetLoader.load( 'Drone.glb', function ( gltf ) {
+                
+                gltf.scene.traverse( function ( child ) {
+                        if ( child.isMesh ) {
+                                var instancedMesh = new THREE.InstancedMesh( child.geometry, child.material, 1 );
+                                instancedMesh.setMatrixAt( 0, dummy.matrix );
+                                
+                                scene.add( instancedMesh );
+                        }
+                });
+        });
+        
+*/
+        
+        const highlightMesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(10,10),
+                new THREE.MeshBasicMaterial({
+                        color: '#d1b9b2', 
+                        side: THREE.DoubleSide,
+                        visible: true
+                })
+        );
+        highlightMesh.position.set(0,gridHelper.position.y, 0);
+        highlightMesh.rotateX(-Math.PI /2);
+        scene.add(highlightMesh);
+
+        renderer.domElement.addEventListener('pointerdown', (event) =>{
+                pointer.x = (event.clientX / renderer.domElement.clientWidth - renderer.domElement.getBoundingClientRect().x) * 2 - 1;
+                pointer.y = -(event.clientY / renderer.domElement.clientHeight + renderer.domElement.getBoundingClientRect().y) * 2 + 1;
+                
+                clickMeshIntersect = raycaster.intersectObject(clickMesh)[0];
+                highlightMesh.material.color=new THREE.Color('#ffaaaa');
+                
+        });
+        renderer.domElement.addEventListener('pointerup', (event) =>{
+                pointer.x = (event.clientX / renderer.domElement.clientWidth - renderer.domElement.getBoundingClientRect().x) * 2 - 1;
+                pointer.y = -(event.clientY / renderer.domElement.clientHeight + renderer.domElement.getBoundingClientRect().y) * 2 + 1;
+                
+                clickMeshIntersect = raycaster.intersectObject(clickMesh)[0];
+                highlightMesh.material.color=new THREE.Color('#d1b9b2');
+                
+        });
+        
+
+        
+        document.addEventListener( 'pointermove', function(event){
+                pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+                pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1; 
+                raycaster.setFromCamera( pointer, camera );
+                
+                clickMeshIntersect = raycaster.intersectObject(clickMesh)[0];
+                highlightMesh.position.copy(clickMeshIntersect.point).add(clickMeshIntersect.face.normal );
+                highlightMesh.position.divideScalar(10).floor().multiplyScalar(10).addScalar(5);
+                highlightMesh.position.y =gridHelper.position.y;
+        });
+                
+                
         window.addEventListener( 'resize', onWindowResize );
-        const obj = gltf.scene.getObjectByName('Earth');
-        console.log(obj.isObject3D); // returns true
+        //const obj = gltf.scene.getObjectByName('Earth');
+        //console.log(obj.isObject3D); // returns true
         
 }
 
@@ -165,11 +245,6 @@ function animate() {
 
 function render(){
         //const time = Date.now() * 0.001;
-        raycaster.setFromCamera( pointer, camera );
-        const intersects = raycaster.intersectObjects( scene.children, true );
-      
-        
-
         renderer.render(scene, camera );
 
 }
